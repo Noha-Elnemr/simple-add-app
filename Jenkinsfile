@@ -74,6 +74,20 @@ pipeline {
         sh 'sudo systemctl restart simple-add.service || true'
       }
     }
+    stage('Test') {
+	    steps {
+		sh '''
+		. .venv/bin/activate
+		pytest -q --junitxml=report.xml
+		'''
+	    }
+	    post {
+		always {
+		    junit 'report.xml'
+		}
+	    }
+	}
+
   }
 
   post {
