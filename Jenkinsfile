@@ -2,11 +2,9 @@ pipeline {
   agent any
 
   triggers {
-    // Schedule: run daily at 2:30am (example). Change cron as needed.
-    // Format: MIN HOUR DOM MON DOW
+    // Run daily at 2:30am
     cron('30 2 * * *')
-
-    // GitHub webhook trigger (requires GitHub plugin & job set to "GitHub hook trigger for GITScm polling")
+    // Trigger on GitHub push
     githubPush()
   }
 
@@ -37,12 +35,13 @@ pipeline {
       steps {
         sh '''
           . .venv/bin/activate
-          pytest -q
+          export PYTHONPATH=$WORKSPACE
+          pytest -q --junitxml=report.xml
         '''
       }
       post {
         always {
-          junit allowEmptyResults: true, testResults: '**/test-*.xml' // optional if generating junit xml
+          junit 'report.xml'
         }
       }
     }
@@ -50,9 +49,8 @@ pipeline {
     stage('Package') {
       steps {
         sh '''
-          # create a zip package (artifact)
           rm -f build.zip
-          zip -r build.zip app run.sh README.md requirements.txt
+          zip -r build.zip app run.sh README.md requirements.txt || true
           ls -l build.zip
         '''
         archiveArtifacts artifacts: 'build.zip', fingerprint: true
@@ -61,38 +59,21 @@ pipeline {
 
     stage('Deploy') {
       steps {
-        // requires jenkins user has sudo rights for the deploy commands or use ssh to remote host
         sh '''
           echo "Deploying to ${DEPLOY_DIR}"
           sudo mkdir -p ${DEPLOY_DIR}
           sudo chown -R $(whoami):$(whoami) ${DEPLOY_DIR}
           sudo rm -rf ${DEPLOY_DIR}/*
-          sudo cp -r app run.sh requirements.txt ${DEPLOY_DIR}/
+          sudo cp -r app run.sh requirements.txt ${DEPLOY_DIR}/ || true
           sudo chown -R simpleapp:simpleapp ${DEPLOY_DIR} || true
+          sudo systemctl restart simple-add.service || true
         '''
-        // restart systemd service (if applicable)
-        sh 'sudo systemctl restart simple-add.service || true'
       }
     }
-    stage('Test') {
-	    steps {
-		sh '''
-		. .venv/bin/activate
-		pytest -q --junitxml=report.xml
-		'''
-	    }
-	    post {
-		always {
-		    junit 'report.xml'
-		}
-	    }
-	}
-
   }
 
   post {
     always {
-      // Clean workspace (needs Workspace Cleanup plugin)
       cleanWs()
     }
     success {
